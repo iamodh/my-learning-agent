@@ -1,59 +1,82 @@
-사용자: Express로 이미지 업로드 받는 API 만들어야 하는데 어떻게 시작해야 해? 폼에서 파일 받아서 서버에 저장하는 거.
+사용자: Express로 이미지 업로드 받는 API 만들어야 하는데 어디서부터 시작해야 해? req.body로 받으면 되나?
 
-AI: Express에서 파일 업로드는 보통 multer라는 미들웨어를 써. Express 공식 생태계에서 멀티파트 폼 데이터를 처리하려고 만든 라이브러리야. npm install multer로 설치하고, 라우터에 미들웨어로 끼워주면 req.file이나 req.files에 업로드된 파일 정보가 담겨. 기본 사용은 upload.single('이미지필드명') 이런 식으로 호출해서 라우트 핸들러 앞에 붙이는 구조야.
+AI: 안타깝게도 req.body로는 파일이 안 잡혀요. 이미지나 파일은 보통 multipart/form-data 형식으로 오는데, Express 기본 파서(express.json, express.urlencoded)는 이걸 처리 못 합니다. 그래서 보통 multer라는 미들웨어를 추가로 씁니다. busboy나 formidable도 있지만 Express 생태계에선 multer가 사실상 표준이에요.
 
-사용자: 근데 왜 그냥 express.json()이나 express.urlencoded() 같은 기본 미들웨어로는 안 되는 거야? 어차피 같은 POST 요청 아냐?
+사용자: 음 근데 왜 일반 미들웨어로는 안 되는 거야? multer가 내부에서 정확히 뭘 해주는 건데?
 
-AI: 좋은 질문이야. 파일 업로드는 Content-Type이 multipart/form-data로 오는데, 이건 JSON이나 URL-encoded와 형식이 완전히 달라. 하나의 요청 본문 안에 boundary 문자열로 구분된 여러 파트가 들어있고, 각 파트마다 헤더랑 바이너리 데이터가 섞여 있어. express.json()은 이걸 파싱 못해서 빈 body가 되거나 에러가 나. multer가 하는 일이 바로 이 multipart 스트림을 읽어서 텍스트 필드는 req.body로, 파일 파트는 따로 추려내는 거야.
+AI: multipart/form-data는 텍스트랑 바이너리가 boundary 문자열로 구분돼서 한 요청에 섞여 들어오는 형식이에요. JSON처럼 단순히 문자열을 파싱하는 게 아니라, 스트림을 읽으면서 각 파트의 헤더를 읽고 본문을 잘라내는 작업이 필요합니다. multer는 이걸 대신 해주면서 텍스트 필드는 req.body에, 파일은 req.file(또는 req.files)에 꽂아주는 역할을 해요. 즉 파싱 + Express 친화적 형태로 정리, 이 두 가지가 핵심입니다.
 
-사용자: 아 그래서 별도 미들웨어가 필요한 거구나. 그럼 multer가 내부에서 스트림 읽으면서 boundary 만나면 잘라내고 그런 식으로 동작하는 거야?
+사용자: 오케이 그럼 실제로 어떻게 쓰는 건지 코드로 좀 보여줘
 
-AI: 정확해. 내부적으로는 busboy라는 저수준 파서를 써서 요청 스트림을 청크 단위로 읽어가며 boundary를 감지하고 파트를 분리해. 각 파트의 헤더(Content-Disposition, Content-Type 등)를 보고 일반 필드인지 파일인지 판단하고, 파일이면 어딘가에 써내려가는 거지. 코드로 보면 이런 느낌이야.
-
+AI: 가장 기본적인 형태는 이렇습니다.
 ```js
-const express = require('express')
-const multer = require('multer')
-const upload = multer({ dest: 'uploads/' })
+const express = require('express');
+const multer = require('multer');
 
-const app = express()
+const upload = multer({ dest: 'uploads/' });
+const app = express();
+
 app.post('/upload', upload.single('image'), (req, res) => {
-  console.log(req.file)  // 파싱된 파일 정보
-  console.log(req.body)  // 같이 온 텍스트 필드
-  res.send('ok')
-})
+  console.log(req.file);   // 업로드된 파일 정보
+  console.log(req.body);   // 같이 온 텍스트 필드
+  res.json({ ok: true });
+});
 ```
+upload.single('image')에서 'image'는 클라이언트가 보낸 form 필드 이름이에요. 여러 개면 .array('images', 5)나 .fields([...])를 씁니다.
 
-dest만 주면 알아서 디스크에 임시 파일로 떨어뜨려.
+사용자: 잠깐, 그럼 파일은 어디에 저장되는 거야? 메모리야 디스크야?
 
-사용자: 잠깐, 파일은 어디에 저장되는 거야? 메모리야 디스크야? dest 안 주면 어떻게 돼?
+AI: 위 예시처럼 dest 옵션만 주면 디스크의 uploads/ 폴더에 임시 파일명으로 저장됩니다. 근데 사실 저장 방식은 multer 본체가 아니라 "스토리지"라는 별도 어댑터가 결정해요. 기본 제공되는 게 diskStorage(디스크에 저장)랑 memoryStorage(버퍼로 메모리에 보관) 두 가지고, dest는 내부적으로 diskStorage를 쓰는 단축 문법입니다.
 
-AI: 그게 스토리지(storage)라는 개념으로 분리돼 있어. multer는 파싱만 담당하고, "파싱된 바이트를 어디에 둘지"는 스토리지 어댑터가 결정해. 기본 제공은 두 가지인데, diskStorage는 디스크에 파일로 쓰고, memoryStorage는 Buffer로 메모리에 들고 있어. dest 옵션을 주면 내부적으로 diskStorage를 만들어 쓰는 거고, 둘 다 안 주면 임시 디렉토리에 떨어져. 큰 파일을 메모리에 올리면 서버가 터질 수 있으니 용도에 맞게 골라야 해.
+사용자: 스토리지 어댑터라는 게 정확히 어떻게 동작하는 건데? 왜 굳이 분리돼 있어?
 
-사용자: 그럼 S3나 GCS 같은 클라우드에 바로 올리고 싶을 땐? 디스크에 한 번 저장하고 다시 올리는 건 비효율적이잖아.
+AI: 스토리지는 _handleFile(파일을 받아서 어딘가에 쓰기)과 _removeFile(에러 시 정리) 두 메서드를 가진 객체예요. multer는 멀티파트를 파싱하다가 파일 파트를 만나면 그 스트림을 스토리지에 넘기고, 스토리지가 "이걸 디스크에 쓸지, 메모리에 담을지, S3에 올릴지"를 결정합니다. 이렇게 분리해둔 덕분에 multer-s3, multer-gridfs-storage 같은 서드파티 스토리지로 갈아끼우기만 하면 저장 위치를 통째로 바꿀 수 있어요. 파싱과 저장의 책임을 분리한 구조죠.
 
-AI: 그래서 스토리지가 어댑터 형태로 추상화돼 있는 거야. multer-s3 같은 패키지를 쓰면 스트림을 받자마자 S3로 직접 흘려보내. 디스크 거치지 않고 바로 클라우드로 가는 거지. 직접 커스텀 스토리지도 만들 수 있어서 _handleFile과 _removeFile 메서드만 구현하면 어디든 보낼 수 있어. 예를 들면 이런 식.
+사용자: 그렇구나. 디스크 스토리지로 파일명까지 직접 정하는 코드 좀 보여줄래?
 
+AI: diskStorage를 직접 만들면 폴더랑 파일명을 함수로 제어할 수 있습니다.
 ```js
-const multer = require('multer')
-const multerS3 = require('multer-s3')
-const { S3Client } = require('@aws-sdk/client-s3')
+const path = require('path');
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, 'uploads/');
+  },
+  filename: (req, file, cb) => {
+    const unique = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    cb(null, unique + path.extname(file.originalname));
+  }
+});
 
-const s3 = new S3Client({ region: 'ap-northeast-2' })
-const upload = multer({
-  storage: multerS3({
-    s3,
-    bucket: 'my-bucket',
-    key: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`)
-  })
-})
+const upload = multer({ storage });
 ```
+원본 파일명을 그대로 쓰면 한글 깨짐이나 충돌이 생기기 쉬워서 보통 이렇게 고유 이름을 만들어 줍니다.
 
-요청 핸들러 코드는 그대로 두고 storage만 갈아끼우면 돼.
+사용자: 근데 이미지만 받고 싶은데 아무 파일이나 다 받으면 곤란하잖아. 어떻게 제한해?
 
-사용자: 오 어댑터 패턴이네. 근데 이미지만 받고 싶은데 누가 .exe 같은 거 올리면 어떻게 막아? 그리고 100GB짜리 파일 올려버리면 서버 죽지 않아?
+AI: multer 옵션에 fileFilter를 넘기면 됩니다. 파일의 mimetype을 보고 받을지 거를지 결정해요.
+```js
+const upload = multer({
+  storage,
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) cb(null, true);
+    else cb(new Error('이미지만 업로드 가능합니다'), false);
+  }
+});
+```
+다만 mimetype은 클라이언트가 보낸 값이라 위조될 수 있어요. 엄격하게 하려면 업로드 후 파일의 매직 넘버(file-type 같은 라이브러리)로 한 번 더 검증하는 게 좋습니다.
 
-AI: multer 옵션에 fileFilter랑 limits가 있어. fileFilter는 콜백 함수라서 file 객체(mimetype, originalname 등)를 보고 cb(null, true)로 통과시키거나 cb(null, false)로 거를 수 있어. mimetype이 'image/'로 시작하는지 검사하는 식이지. 다만 mimetype은 클라이언트가 보낸 값이라 위조 가능하니 정말 민감하면 파일 시그니처(매직 넘버)까지 봐야 해. limits에는 fileSize를 바이트 단위로 주면 그 크기를 넘는 순간 multer가 스트림을 끊고 에러를 던져. 5MB 제한이면 fileSize: 5 * 1024 * 1024 이런 식이야. limits 안 걸면 정말로 디스크가 꽉 차거나 메모리가 터질 수 있어.
+사용자: 크기 제한은? 너무 큰 파일 올라오면 서버 죽을 것 같은데
 
-사용자: 정리하면 multer는 multipart 요청 파싱만 하고, 스토리지 어댑터가 파싱된 바이트를 어디에 둘지 결정하는 구조네. 그래서 S3로 바꾸려면 라우트 코드 안 건드리고 storage만 교체하면 되고, fileFilter랑 limits는 파싱 도중에 끼어들어서 거르거나 자르는 거고. 그럼 fileFilter에서 false 주면 그 파일만 버려지고 요청 자체는 통과해? 아니면 전체가 막혀?
+AI: 같은 옵션 객체에 limits를 추가하면 됩니다. fileSize는 바이트 단위예요.
+```js
+const upload = multer({
+  storage,
+  fileFilter,
+  limits: { fileSize: 5 * 1024 * 1024 }  // 5MB
+});
+```
+초과하면 multer가 MulterError('LIMIT_FILE_SIZE')를 던지니까 에러 핸들러에서 잡아서 413 같은 응답을 주면 됩니다. 중요한 건 이 검사는 스트림을 읽으면서 동작해서, 전체를 다 받은 다음에 거르는 게 아니라 한도 초과 시점에 끊어버린다는 점이에요.
 
-AI: 좋은 마무리야. fileFilter에서 cb(null, false)를 주면 그 파일만 조용히 버려지고 req.file이 undefined가 돼서 요청 자체는 다음 핸들러로 넘어가. 그래서 라우트 핸들러에서 req.file 존재 여부를 직접 체크해야 해. 반대로 cb(new Error('이미지만 됨'))처럼 에러를 넘기면 요청 전체가 에러 핸들러로 빠져. 보통은 후자가 명확해서 권장돼. 한 요청에 여러 파일을 받을 땐 일부만 거르는 동작이 의미 있을 수도 있고.
+사용자: 정리하면 multer는 multipart 요청을 파싱해서 req.file에 꽂아주는 역할이고, 실제로 어디에 저장할지는 스토리지 어댑터가 결정하는 거네. 그래서 나중에 로컬 디스크에서 S3로 옮기고 싶으면 스토리지만 multer-s3로 갈아끼우면 라우터 코드는 안 건드려도 되는 구조구나.
+
+AI: 정확합니다. 파싱(multer)과 저장(스토리지)이 분리돼 있다는 게 핵심이라서, 라우터에선 upload.single('image')만 그대로 두고 스토리지 인스턴스만 교체하면 됩니다. 거기에 fileFilter로 MIME을 거르고 limits로 크기를 막는 두 겹의 방어선까지 두면 기본적인 업로드 API는 안정적으로 굴러가요.
