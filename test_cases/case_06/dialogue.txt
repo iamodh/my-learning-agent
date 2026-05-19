@@ -1,0 +1,192 @@
+사용자: GraphQL 리졸버 짰는데 "Cannot return null for non-nullable field Query.user" 자꾸 떠. 스키마는 user(id: ID!): User! 인데, 내 리졸버는 이거야:
+
+```js
+const resolvers = {
+  Query: {
+    user: (_, { id }) => {
+      db.user.findUnique({ where: { id } });
+    },
+  },
+};
+```
+
+AI: 함수 본문에 return이 없어서 undefined가 반환되고, non-nullable 필드라 null 에러로 떨어지는 거야. findUnique는 Promise를 반환하니까 그걸 return해줘야 GraphQL이 알아서 resolve해.
+
+```js
+const resolvers = {
+  Query: {
+    user: (_, { id }) => {
+      return db.user.findUnique({ where: { id } });
+    },
+  },
+};
+```
+
+화살표 함수 한 줄로 줄여서 `user: (_, { id }) => db.user.findUnique({ where: { id } })` 이렇게 써도 돼.
+
+사용자: 에러는 없어졌는데 응답에서 user.name이 undefined로 나와. 호출부는 이렇게 생겼어:
+
+```js
+async function resolveUserName(id) {
+  const user = db.user.findUnique({ where: { id } });
+  return user.name;
+}
+```
+
+리졸버 안에서 부르는 헬퍼인데 왜 비어있지?
+
+AI: findUnique가 Promise를 반환하는데 await을 안 했어. 그래서 user는 실제 객체가 아니라 Pending Promise이고, 거기엔 .name이 없으니 undefined가 나오는 거야.
+
+```js
+async function resolveUserName(id) {
+  const user = await db.user.findUnique({ where: { id } });
+  return user.name;
+}
+```
+
+리졸버에서도 비동기 처리 들어가면 async 붙이고 await 쓰는 패턴으로 통일하면 안전해.
+
+사용자: 근데 async 함수 안에서 await 안 쓰면 정확히 뭐가 일어나는 거야? 그냥 동기처럼 도는 거 아니야?
+
+AI: 아니, await 없이도 호출 자체는 그대로 일어나지만, 반환값이 Promise면 그 Promise 자체가 변수에 담겨. 동기처럼 풀리지 않아.
+
+```js
+async function bad() {
+  const user = db.user.findUnique({ where: { id: 1 } });
+  console.log(user); // Promise { <pending> }
+  return user.name;  // undefined
+}
+
+async function good() {
+  const user = await db.user.findUnique({ where: { id: 1 } });
+  console.log(user); // { id: 1, name: 'Lee' }
+  return user.name;  // 'Lee'
+}
+```
+
+async 함수는 항상 반환값을 Promise로 감쌀 뿐이고, 내부에서 await을 안 쓰면 그냥 비동기 결과를 그대로 흘려보내는 거야.
+
+사용자: 그럼 DB 호출이 실패하면 어떻게 처리해? 그냥 throw해버리면 클라이언트한테 스택 트레이스나 내부 SQL 같은 거 다 노출되는 거 아니야?
+
+AI: 맞아. Apollo Server는 formatError 옵션으로 클라이언트에 나가는 에러를 가공할 수 있어. 내부 에러는 로깅하고, 외부엔 일반화된 메시지만 내보내는 식이지.
+
+```js
+const server = new ApolloServer({
+  typeDefs,
+  resolvers,
+  formatError: (formattedError, error) => {
+    console.error(error); // 내부 로깅
+    if (formattedError.extensions?.code === 'INTERNAL_SERVER_ERROR') {
+      return { message: 'Internal server error' };
+    }
+    return formattedError;
+  },
+});
+```
+
+리졸버에서는 예상 못한 에러는 그대로 throw하고, formatError에서 마스킹하는 게 깔끔해.
+
+사용자: 그럼 특정 에러는 클라이언트에 그대로 보여주고 싶을 땐 어떻게 구분해? 예를 들어 "유저 없음" 같은 건 그대로 내려주고 싶은데.
+
+AI: GraphQLError 인스턴스로 명시적으로 throw하고, extensions.code로 분기하면 돼. formatError에서 그 코드를 보고 통과시킬지 마스킹할지 결정하는 거지.
+
+```js
+import { GraphQLError } from 'graphql';
+
+const resolvers = {
+  Query: {
+    user: async (_, { id }) => {
+      const user = await db.user.findUnique({ where: { id } });
+      if (!user) {
+        throw new GraphQLError('User not found', {
+          extensions: { code: 'NOT_FOUND' },
+        });
+      }
+      return user;
+    },
+  },
+};
+```
+
+```js
+formatError: (formattedError, error) => {
+  const code = formattedError.extensions?.code;
+  const safeCodes = ['NOT_FOUND', 'BAD_USER_INPUT', 'UNAUTHENTICATED'];
+  if (safeCodes.includes(code)) return formattedError;
+  console.error(error);
+  return { message: 'Internal server error' };
+},
+```
+
+사용자: 이렇게 정리해봤는데 괜찮아?
+
+```js
+const resolvers = {
+  Query: {
+    user: async (_, { id }) => {
+      const user = await db.user.findUnique({ where: { id } });
+      if (!user) {
+        throw new GraphQLError('User not found', {
+          extensions: { code: 'NOT_FOUND' },
+        });
+      }
+      return user;
+    },
+  },
+  User: {
+    posts: async (parent) => {
+      return await db.post.findMany({ where: { userId: parent.id } });
+    },
+  },
+};
+```
+
+AI: 거의 다 좋은데 User.posts에서 `return await`는 불필요해. async 함수가 어차피 반환값을 Promise로 감싸기 때문에 그냥 return만 해도 똑같이 동작하고, 마이크로태스크 하나가 덜 생겨.
+
+```js
+User: {
+  posts: (parent) => {
+    return db.post.findMany({ where: { userId: parent.id } });
+  },
+},
+```
+
+try/catch로 감쌀 일이 없으면 async 키워드 자체도 빼도 돼. Promise를 그대로 반환하기만 하면 GraphQL이 알아서 처리해.
+
+사용자: 운영 환경에선 에러 로깅을 어떻게 해? console.error만으론 부족할 것 같은데, 어떤 요청에서 터졌는지도 추적하고 싶어.
+
+AI: formatError에서 로깅하면 컨텍스트가 부족하니까, 보통 별도 플러그인이나 미들웨어로 빼서 요청 정보까지 같이 남겨. Apollo Server는 플러그인 훅으로 처리하기 좋아.
+
+```js
+const loggingPlugin = {
+  async requestDidStart() {
+    return {
+      async didEncounterErrors({ request, errors, contextValue }) {
+        for (const err of errors) {
+          logger.error({
+            message: err.message,
+            path: err.path,
+            code: err.extensions?.code,
+            operation: request.operationName,
+            userId: contextValue.userId,
+            stack: err.originalError?.stack,
+          });
+        }
+      },
+    };
+  },
+};
+
+const server = new ApolloServer({
+  typeDefs,
+  resolvers,
+  plugins: [loggingPlugin],
+  formatError,
+});
+```
+
+logger는 winston/pino 같은 라이브러리 쓰고, 실제 모니터링은 Sentry나 Datadog에 연결해서 알림까지 받는 구조가 일반적이야.
+
+사용자: 그럼 결국 안전한 패턴은 — 리졸버는 전부 async로 통일, 의도한 에러는 GraphQLError로 코드 붙여서 throw, 예상 못한 건 플러그인에서 컨텍스트 포함해 로깅, formatError는 safe code만 통과시키고 나머지 마스킹. 이렇게 정리하면 되겠네?
+
+AI: 정확해. 그 네 단계가 거의 표준 패턴이고, 각 레이어가 책임이 분리돼 있어서 유지보수도 쉬워. 리졸버는 도메인 로직만, 플러그인은 관찰성, formatError는 외부 노출 정책 — 이렇게 역할이 안 섞이게만 유지하면 돼.

@@ -1,0 +1,147 @@
+사용자: Next.js로 개인 블로그 만들어보려고 하는데, 처음 쓰는 거라 뭐부터 시작해야 할지 모르겠어. 어떻게 접근하면 좋을까?
+
+AI: 블로그 정도면 전체 흐름이 꽤 깔끔하게 나와. 보통 순서로 보면 페이지 만드는 라우팅을 먼저 이해하고, 그다음 글을 미리 만들어두는 SSG, 마크다운으로 글 쓰는 MDX, 그리고 배포, 마지막에 SEO 챙기는 식이야. 하나씩 따라가면 어렵지 않아.
+
+사용자: 그럼 라우팅부터. Next.js는 라우팅이 페이지 폴더 기반이라던데 그게 정확히 어떻게 동작하는 거야?
+
+AI: 최신 Next.js는 app 디렉토리 안에 폴더 구조가 그대로 URL이 돼. 예를 들어 app/about/page.tsx를 만들면 /about 경로가 자동으로 생기는 식이지. 별도로 라우터 설정 파일을 안 만드는 게 핵심이고, page.tsx, layout.tsx 같은 파일명에 약속된 역할이 있어.
+
+사용자: 근데 블로그 글 페이지는 /posts/[slug] 같은 거잖아. 그런 동적 경로는 어떻게 해?
+
+AI: 폴더 이름을 대괄호로 감싸면 돼. app/posts/[slug]/page.tsx 이렇게 만들면 [slug] 자리에 어떤 값이든 들어올 수 있고, 컴포넌트 안에서 params로 그 값을 받아 쓸 수 있어. /posts/hello로 들어오면 slug가 "hello"가 되는 식이지.
+
+사용자: 실제로 어떻게 코드 짜는지 좀 보여줄래?
+
+AI: 대충 이런 모양이야.
+
+```tsx
+// app/posts/[slug]/page.tsx
+export default async function PostPage({
+  params,
+}: {
+  params: { slug: string };
+}) {
+  const { slug } = params;
+  // slug로 글 데이터 가져오기
+  return (
+    <article>
+      <h1>{slug}</h1>
+    </article>
+  );
+}
+```
+
+slug를 키로 글 내용을 찾아오는 함수만 붙이면 글 페이지 완성이야.
+
+사용자: 그럼 글 데이터는 어디서 가져와? 매번 빌드할 때마다 만들어 두는 거야 아니면 요청 시점에?
+
+AI: 블로그라면 보통 빌드 시점에 미리 다 만들어두는 SSG가 잘 맞아. 그래서 generateStaticParams라는 함수를 export하면 돼. 거기서 모든 slug 목록을 반환하면, 빌드할 때 Next.js가 그 slug마다 페이지를 정적 HTML로 미리 생성해줘.
+
+사용자: 빌드 시점에 만든다는 게 정확히 어떻게 동작하는 거야? 글 추가하면 매번 재빌드해야 해?
+
+AI: 기본적으로는 그래. 빌드할 때 정적 HTML이 만들어지니까 새 글이 추가되면 다시 빌드해서 배포해야 반영돼. 근데 ISR이라는 옵션을 쓰면 일정 시간마다 백그라운드에서 다시 생성하게 할 수 있어. export const revalidate = 60 이런 식으로 적어두면 60초마다 재생성 시도하는 식. 개인 블로그면 글 올릴 때마다 푸시해서 재빌드하는 게 보통은 더 깔끔해.
+
+사용자: 아 잠깐, 주말에 카페에서 작업하려고 했는데 좋은 카페 추천해줄 수 있어?
+
+AI: 위치를 모르니까 콕 찍긴 어려운데, 콘센트 자리 많고 너무 시끄럽지 않은 곳이 작업에는 제일이지. 보통 동네 로스터리 카페들이 자리가 여유로워서 코딩하기엔 좋더라.
+
+사용자: 다시 블로그 얘기로 돌아와서, 글은 마크다운으로 쓰고 싶은데 MDX라는 게 그건가?
+
+AI: 응 정확해. MDX는 마크다운에 JSX를 섞어 쓸 수 있게 해주는 포맷이야. 그러니까 평소처럼 # 제목 쓰고 **굵게** 쓰다가, 중간에 리액트 컴포넌트를 그냥 넣어 쓸 수 있어. 블로그처럼 가끔 인터랙티브한 위젯이나 임베드를 넣고 싶을 때 유연하지.
+
+사용자: MDX 파일에 제목이나 날짜 같은 메타 정보는 어떻게 넣어?
+
+AI: 파일 맨 위에 프론트매터라고 부르는 YAML 헤더를 적어. 이런 식이야.
+
+```mdx
+---
+title: 첫 번째 글
+date: 2025-05-01
+tags: [next, blog]
+---
+
+여기부터 본문 내용...
+```
+
+그러면 빌드할 때 이 메타 정보를 파싱해서 글 목록 만들 때 쓰거나 메타 태그에 꽂아 쓸 수 있어.
+
+사용자: Next.js에 MDX 붙이는 코드 좀 보여줘. 어떻게 설정하는 거야?
+
+AI: @next/mdx 패키지를 깔고 next.config에 래핑해주면 돼.
+
+```js
+// next.config.mjs
+import createMDX from '@next/mdx';
+
+const withMDX = createMDX({
+  extension: /\.mdx?$/,
+});
+
+const nextConfig = {
+  pageExtensions: ['ts', 'tsx', 'md', 'mdx'],
+};
+
+export default withMDX(nextConfig);
+```
+
+이러면 .mdx 파일도 페이지로 인식돼. 프론트매터 파싱은 gray-matter 같은 라이브러리 추가로 쓰면 편하고.
+
+사용자: MDX 안에서 리액트 컴포넌트도 쓸 수 있다는데 그럼 어떻게 import해?
+
+AI: 두 가지 방법이 있어. MDX 파일 안에서 직접 import 구문 써서 가져와 쓰는 방법이 가장 직관적이고, 매번 import하기 귀찮으면 mdx-components.tsx 파일을 루트에 만들어서 전역으로 쓸 컴포넌트를 등록해두면 돼. 그러면 모든 MDX에서 import 없이 그냥 쓸 수 있어.
+
+사용자: 이제 어디다 배포할지 고민인데. Vercel이 Next.js 만든 회사니까 그쪽으로 가는 게 자연스러울 거 같지?
+
+AI: 응 가장 무난한 선택이야. Next.js 기능들이 별도 설정 없이 거의 다 그냥 동작하고, GitHub 연동해두면 푸시할 때마다 자동 배포돼. 개인 블로그 규모면 무료 플랜으로도 충분해.
+
+사용자: 그럼 환경 변수 같은 건 어떻게 처리해? 로컬이랑 배포 환경 다르잖아
+
+AI: 로컬에서는 프로젝트 루트에 .env.local 파일 만들어서 API_KEY=... 이런 식으로 적어두고, Vercel은 대시보드 Settings의 Environment Variables에서 같은 키를 등록하면 돼. 브라우저에 노출돼야 하는 값은 NEXT_PUBLIC_ 접두사를 붙여야 하는 거 정도만 기억하면 돼.
+
+사용자: 근데 누가 Netlify도 괜찮다고 하던데. 가격이나 기능 차이는 어때?
+
+AI: Netlify도 정적 사이트 쪽에선 오래된 강자라 기능 자체는 비슷해. 무료 플랜 한도가 빌드 시간 기준으로 보면 Netlify가 좀 더 넉넉한 편이고, 폼이나 함수 같은 자체 기능들이 잘 다듬어져 있어. 다만 Next.js 특유의 기능들은 Vercel만큼 1급 지원은 아니야.
+
+사용자: 음 Netlify가 가격은 더 매력적인데. 그런데 Next.js랑 잘 맞나?
+
+AI: 어느 정도는 맞아. Netlify에 Next.js 런타임 어댑터가 있어서 기본적인 SSG, ISR, 라우팅은 잘 돌아가. 다만 새로운 기능들이 Vercel 쪽에 먼저 들어왔다가 어댑터로 따라오는 구조라 가끔 한 박자 늦거나 일부 동작이 미묘하게 달라질 수 있어. 단순 정적 블로그면 차이가 거의 안 느껴질 수도 있고.
+
+사용자: 아 결국 Next.js는 Vercel이 가장 잘 지원하는 거네. 그냥 Vercel로 갈게
+
+AI: 그게 제일 속 편한 선택이야. 처음부터 호환성 신경 안 쓰고 Next.js 기능 다 써먹을 수 있으니까 학습할 때도 변수 줄어들고 좋아.
+
+사용자: 맞다 도메인 이름 뭐로 할지도 고민이야. 좋은 거 떠오르는 거 있어?
+
+AI: 너무 길거나 의미 짜내려고 하면 결국 안 쓰게 되더라. 본인 이름이나 자주 쓰는 닉네임에 .dev나 .blog 정도 붙이는 게 길게 봤을 때 제일 안 질려.
+
+사용자: 다시 블로그 얘기. SEO는 어떻게 챙겨? 블로그니까 검색 잘 되는 게 중요한데
+
+AI: Next.js는 metadata API가 있어서 페이지마다 export const metadata = { ... } 이렇게 적어두면 알아서 <head>에 메타 태그를 꽂아줘. layout.tsx에 사이트 공통 메타데이터를 적고, 각 page.tsx에서 페이지별로 덮어쓰는 식으로 쓰면 돼.
+
+사용자: 메타 태그는 어떤 거 꼭 챙겨야 해? title이랑 description 말고도 있나?
+
+AI: title, description은 기본이고, 공유했을 때 카드로 예쁘게 뜨려면 Open Graph 태그(og:title, og:description, og:image)랑 Twitter 카드 태그를 챙겨야 해. 그리고 같은 글이 여러 URL로 접근될 수 있으면 canonical URL도 지정해두는 게 좋아. metadata API의 openGraph, twitter, alternates 필드에 그대로 적으면 돼.
+
+사용자: 글마다 메타 태그가 달라야 하잖아. 그건 어떻게 처리해?
+
+AI: page.tsx에서 generateMetadata라는 비동기 함수를 export하면 돼. params를 받아서 그 글의 데이터를 불러온 다음, title이나 description을 글 내용에 맞춰 반환하는 식이야.
+
+```tsx
+export async function generateMetadata({ params }) {
+  const post = await getPost(params.slug);
+  return {
+    title: post.title,
+    description: post.summary,
+  };
+}
+```
+
+이렇게 해두면 글마다 메타 태그가 동적으로 들어가.
+
+사용자: 사이트맵이랑 robots.txt도 필요해? 그건 어떻게 만들어?
+
+AI: 블로그면 있는 게 좋아. app 디렉토리 루트에 sitemap.ts랑 robots.ts 파일을 만들면 Next.js가 자동으로 /sitemap.xml, /robots.txt 경로로 만들어줘. sitemap.ts에서는 모든 글 slug를 돌면서 URL 배열을 반환하면 되고, robots.ts에서는 어떤 경로를 크롤링 허용/거부할지 적어주면 돼.
+
+사용자: 정리하면 파일 기반 라우팅으로 페이지 만들고, SSG로 빌드 시점에 글 생성하고, MDX로 콘텐츠 작성하고, Vercel로 배포하면서 환경 변수 관리하고, metadata API로 SEO 챙기는 흐름이네. 이제 그림 그려진다
+
+AI: 정확해. 그 순서대로 하나씩 붙여나가면 돼. 처음엔 페이지 한두 개랑 글 한 편만 가지고 끝까지 배포해보고, 그다음에 MDX 컴포넌트나 사이트맵 같은 디테일 채워가는 식으로 가면 막히는 데 없이 굴러갈 거야.

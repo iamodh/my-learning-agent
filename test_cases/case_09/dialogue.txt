@@ -1,0 +1,117 @@
+사용자: 사이드 프로젝트에 로그인이랑 결제 기능 둘 다 붙여야 하는데, 따로 설계하기보단 같이 보는 게 나을 거 같아서 한꺼번에 물어볼게. 일단 큰 그림부터 잡고 싶어.
+
+AI: 좋은 접근이에요. 두 기능 모두 "사용자가 누구인지 서버가 계속 알고 있어야 한다"는 공통점이 있어서 상태 유지 메커니즘이 핵심으로 깔립니다. 차이는 로그인은 외부 인증(OAuth 등)으로 사용자를 식별하는 게 중심이고, 결제는 외부 결제망(PG사)과 안전하게 돈을 주고받는 흐름이 중심이라는 점이에요. 두 흐름 다 짚어드릴 테니 로그인부터 시작할까요?
+
+사용자: 응 로그인부터. 근데 이메일/비번 받아서 직접 관리하긴 좀 부담스러워서, 구글이나 깃허브 OAuth로 가고 싶어. 이게 정확히 어떻게 동작하는 거야?
+
+AI: OAuth는 크게 세 단계로 흘러요. 첫째, 사용자를 구글/깃허브 인증 페이지로 보내서 "이 앱이 너의 정보 좀 봐도 돼?"를 묻고 동의를 받습니다. 둘째, 동의하면 구글이 우리 서버의 콜백 URL로 인가 코드(authorization code)를 붙여서 리다이렉트해 줘요. 셋째, 우리 서버가 그 코드를 들고 구글에 다시 요청해서 access token을 교환하고, 그 토큰으로 사용자 프로필(이메일, 이름 등)을 가져옵니다. 핵심은 비밀번호가 우리 서버를 거치지 않는다는 거예요.
+
+사용자: 음 흐름은 알겠는데 좀 추상적이네. Express에서 OAuth 처리하는 코드 좀 보여줄래? 구글 기준으로.
+
+AI: 직접 fetch로 토큰 교환하는 최소 버전이 흐름 이해엔 제일 좋아요.
+```js
+// 1) 로그인 시작: 구글 인증 페이지로 보내기
+app.get('/auth/google', (req, res) => {
+  const params = new URLSearchParams({
+    client_id: process.env.GOOGLE_CLIENT_ID,
+    redirect_uri: 'https://myapp.com/auth/google/callback',
+    response_type: 'code',
+    scope: 'openid email profile',
+  });
+  res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params}`);
+});
+
+// 2) 콜백: 인가 코드 → access token → 사용자 정보
+app.get('/auth/google/callback', async (req, res) => {
+  const { code } = req.query;
+
+  const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      code,
+      client_id: process.env.GOOGLE_CLIENT_ID,
+      client_secret: process.env.GOOGLE_CLIENT_SECRET,
+      redirect_uri: 'https://myapp.com/auth/google/callback',
+      grant_type: 'authorization_code',
+    }),
+  });
+  const { access_token } = await tokenRes.json();
+
+  const userRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+    headers: { Authorization: `Bearer ${access_token}` },
+  });
+  const profile = await userRes.json(); // { email, name, ... }
+
+  // 여기서 DB에 upsert하고 로그인 처리
+  res.redirect('/');
+});
+```
+프로덕션에서는 passport-google-oauth20 같은 라이브러리가 state 검증, 에러 처리 같은 걸 다 해줘서 편하긴 한데, 처음엔 이렇게 직접 짜보면 흐름이 머리에 박혀요.
+
+사용자: 오케이 그래서 사용자 정보까지 받았다고 치자. 그 다음엔? 매 요청마다 다시 구글한테 물어보는 건 아닐 거 아냐. 로그인 상태를 어떻게 유지해?
+
+AI: 거기서 세션 관리가 등장합니다. 콜백에서 사용자 정보 받자마자 서버가 세션 ID를 발급하고, 그걸 HttpOnly 쿠키로 브라우저에 심어요. 서버는 세션 저장소(Redis나 DB)에 `{ sessionId → userId }` 를 들고 있다가, 이후 요청이 올 때마다 쿠키의 세션 ID로 사용자를 식별합니다. 토큰(JWT) 방식도 있지만 세션 방식이 만료·강제 로그아웃 컨트롤이 더 직관적이라 이 케이스에선 세션으로 가는 걸 추천해요.
+```js
+req.session.userId = profile.email; // express-session 기준
+```
+
+사용자: 그럼 세션은 언제 만료시켜? 너무 짧으면 자꾸 로그아웃돼서 짜증날 거고, 너무 길면 보안 위험일 텐데.
+
+AI: 보통 두 전략을 섞어 써요. 하나는 sliding expiration — 요청이 올 때마다 만료 시각을 갱신해서 활동 중인 사용자는 안 끊기게 하는 방식. 다른 하나는 absolute expiration — 활동 여부와 상관없이 "최초 로그인 후 N시간"으로 상한을 두는 방식이에요. 일반 서비스라면 sliding 30분 + absolute 14일 정도가 무난하고, 결제 같은 민감 액션 직전엔 더 짧은 재인증을 따로 요구하기도 합니다. Redis 같은 저장소면 키에 TTL 걸어두면 알아서 만료돼서 구현도 깔끔해요.
+
+사용자: 오케이 로그인 흐름은 이제 그림이 잡혔어. 이제 결제 쪽 보자. PG사 붙이는 게 처음인데 어디서부터 시작해야 돼?
+
+AI: 결제는 PG사(Payment Gateway)를 하나 정하는 게 출발점이에요. 국내면 토스페이먼츠, 아임포트(포트원), KG이니시스가 많이 쓰이고, 글로벌이면 Stripe가 표준이죠. 흐름은 대체로 비슷합니다 — 클라이언트에서 PG사 SDK로 결제창을 띄우고, 사용자가 카드 정보 입력하면 PG사가 결제 결과(성공/실패 + 결제 키)를 우리 서버로 알려주고, 우리 서버는 그 키로 PG사에 "이거 진짜 승인해줘"라고 최종 confirm을 호출합니다. 국내 사이드 프로젝트라면 토스페이먼츠가 문서가 제일 깔끔해서 추천해요.
+
+사용자: 잠깐, 근데 PG사가 정확히 뭘 해주는 거야? 그냥 우리가 카드사랑 직접 연결하면 안 되는 거야?
+
+AI: 기술적으론 가능은 하지만 거의 안 합니다. PG사가 해주는 핵심은 두 가지예요. 첫째, 비자/마스터/국내 카드사 수십 곳과의 연결을 단일 API로 추상화해줍니다 — 직접 하려면 카드사마다 따로 계약하고 연동해야 해요. 둘째이자 더 중요한 건, 카드 번호가 PG사 서버로만 흐르고 우리 서버엔 아예 안 닿게 해줍니다. 이게 PCI DSS라는 카드 정보 보안 규제 부담을 거의 다 PG사로 넘겨주는 건데, 직접 카드 번호를 받으면 우리가 그 인증을 통과해야 해서 비용·책임이 엄청 커져요. 그래서 사실상 PG사를 끼는 게 표준입니다.
+
+사용자: 아 그래서 다들 끼는 거구나. 그럼 실제로 결제 요청 보내는 코드는 어떻게 짜? 토스페이먼츠 예시로 좀 보여줘.
+
+AI: 토스페이먼츠는 "결제창은 클라이언트, 최종 승인은 서버" 패턴이에요. 클라이언트에서 SDK로 결제창을 띄우면 성공 시 `paymentKey`, `orderId`, `amount`를 들고 success URL로 돌아오는데, 서버는 그걸 받아서 confirm API를 한 번 더 호출해야 진짜 결제가 확정됩니다.
+```js
+app.post('/payments/confirm', async (req, res) => {
+  const { paymentKey, orderId, amount } = req.body;
+
+  // 1) 우리 DB에 저장된 주문 금액과 클라이언트가 보낸 amount 일치 확인 (위변조 방지)
+  const order = await db.orders.findById(orderId);
+  if (order.amount !== amount) return res.status(400).send('amount mismatch');
+
+  // 2) 토스에 최종 승인 요청
+  const secret = Buffer.from(`${process.env.TOSS_SECRET_KEY}:`).toString('base64');
+  const tossRes = await fetch('https://api.tosspayments.com/v1/payments/confirm', {
+    method: 'POST',
+    headers: {
+      Authorization: `Basic ${secret}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ paymentKey, orderId, amount }),
+  });
+
+  if (!tossRes.ok) return res.status(400).json(await tossRes.json());
+
+  const payment = await tossRes.json();
+  await db.orders.markPaid(orderId, payment);
+  res.json({ ok: true });
+});
+```
+포인트는 "클라이언트가 보낸 금액을 그대로 믿지 말고 서버 DB의 주문 금액과 대조 후 confirm"이에요. 안 그러면 결제창에서 금액을 조작당할 수 있거든요.
+
+사용자: 잠깐, 근데 이 confirm 엔드포인트도 결국 로그인된 사용자가 호출하는 거잖아? 세션 만료된 상태에서 결제 요청 들어오면 어떻게 처리해야 돼?
+
+AI: 정확히 짚으셨어요. 결제 라우트 앞에 인증 미들웨어를 하나 깔아두는 게 정석입니다. 세션이 없거나 만료됐으면 confirm을 아예 호출하지 않고 401로 끊어버려서, 사용자한테 재로그인 후 다시 결제하라고 유도해야 해요 — 결제는 멱등성·금액 정합성이 중요해서 어중간하게 자동 갱신하다 두 번 결제되는 게 제일 위험하거든요.
+```js
+function requireAuth(req, res, next) {
+  if (!req.session?.userId) return res.status(401).json({ error: 'login required' });
+  next();
+}
+
+app.post('/payments/confirm', requireAuth, async (req, res) => {
+  // 위의 confirm 로직, 그리고 order.userId === req.session.userId 도 같이 확인
+});
+```
+하나 더 — 주문이 누구 것인지도 세션의 userId와 대조해야 합니다. 안 그러면 남의 주문을 자기 세션으로 confirm 치는 시나리오가 열려요.
+
+사용자: 정리하면 로그인은 OAuth로 구글한테 사용자 확인받고 세션 만들어서 쿠키로 들고 다니는 거고, 결제는 그 세션 검증한 다음 주문 소유자랑 금액 대조하고 PG사에 confirm 날리는 거네. 결국 세션 관리가 두 흐름의 연결고리고, 만료 정책을 어떻게 잡냐가 양쪽 UX·보안에 다 영향을 주는 거구나.
