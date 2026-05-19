@@ -2,52 +2,40 @@
 
 ## 핵심 요약
 
-CORS 에러를 내는 건 **서버가 아니라 브라우저**다. 브라우저는 다른
-출처(origin)에서 받은 스크립트가 다른 출처의 API를 호출하면, 응답에
-`Access-Control-Allow-Origin` 헤더가 붙어 있는지 검사한다. 그 헤더가
-없거나 내 출처와 안 맞으면 **응답은 도착했어도 JavaScript가 읽지
-못하게** 막는다. 따라서 해결은 "서버가 허용 헤더를 응답에 붙이도록"
-하는 것이다.
+- CORS 에러를 내는 주체는 **서버가 아니라 브라우저**다.
+- 브라우저는 다른 출처(origin)에서 받은 스크립트가 임의의 출처 API를 호출하지 못하도록, 응답에 `Access-Control-Allow-Origin` 헤더가 있는지 검사한다.
+- 헤더가 없거나 내 출처와 맞지 않으면 응답이 도착했더라도 자바스크립트가 그 응답을 **읽지 못하게** 막는다.
+- 해결책은 서버 응답에 적절한 허용 헤더를 붙이는 것이다.
 
-## 왜 막는가
+## 왜 에러가 나는가
 
-브라우저 보안 정책상, A 사이트에서 로드된 스크립트가 사용자의
-인증 상태로 B 사이트 API를 마음대로 호출하면 위험하다. 그래서
-교차 출처 요청의 응답을 기본적으로 차단하고, 서버가 명시적으로
-허용한 출처에만 열어준다.
+요청-응답 자체는 정상적으로 오간다. 문제는 보안이다.
 
-## 프리플라이트 (preflight)
+> 브라우저는 "A 출처에서 받아온 스크립트가 마음대로 B 출처 API를 호출하면 위험하다"고 본다.
 
-JSON content-type이나 커스텀 헤더가 들어간 "단순하지 않은" 요청은,
-본 요청 전에 브라우저가 `OPTIONS` 메서드로 "이 요청 보내도 돼?"를
-먼저 물어본다. 서버가 거절할 요청이라면 실제 `POST`/`DELETE`가
-서버에 도달해 부작용을 일으키기 전에 차단하기 위해서다. 서버는
-이 OPTIONS에 `Access-Control-Allow-Methods`,
-`Access-Control-Allow-Headers` 응답을 돌려줘야 한다.
+그래서 응답이 돌아오면 응답 헤더에 `Access-Control-Allow-Origin`이 있는지, 그 값이 내 출처와 일치하는지 확인한다. 조건이 안 맞으면 응답 본문을 스크립트에게 전달하지 않고 에러로 처리한다.
 
-## Express에서의 적용
+## 핵심 응답 헤더
 
-`cors` 미들웨어가 위 허용 헤더들(프리플라이트 응답 포함)을 자동으로
-붙여준다. 전체 허용은 `app.use(cors())`, 운영 환경에서는 출처를
-좁혀서 쓴다.
+| 헤더 | 역할 |
+|------|------|
+| `Access-Control-Allow-Origin` | 응답을 읽을 수 있는 출처를 지정 |
+| `Access-Control-Allow-Methods` | 허용하는 HTTP 메서드 목록 |
+| `Access-Control-Allow-Headers` | 허용하는 요청 헤더 목록 |
+| `Access-Control-Allow-Credentials` | 쿠키/인증 정보 동반 요청 허용 여부 |
 
-```js
-const express = require('express')
-const cors = require('cors')
-const app = express()
+## 프리플라이트(Preflight)
 
-app.use(cors({
-  origin: 'https://myapp.com',   // 허용할 프론트 출처
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  credentials: true,             // 쿠키/인증정보 동반 허용
-}))
+단순하지 않은 요청(예: `Content-Type: application/json`, 커스텀 헤더, `PUT`/`DELETE` 등)에서는 브라우저가 **본 요청 전에** `OPTIONS` 메서드로 "이 요청 보내도 받아줄 거냐"를 먼저 묻는다.
 
-app.get('/api/users', (req, res) => {
-  res.json({ users: [] })
-})
+- 이유: 서버가 거절할 요청이라면, 실제 `POST`/`DELETE`가 서버에 도달해 **부작용을 일으키기 전에** 차단하기 위함이다.
+- 브라우저는 `OPTIONS` 응답의 `Access-Control-Allow-Methods` / `Allow-Headers`를 보고 본 요청을 보낼지 결정한다.
 
-app.listen(3000)
-```
+## 자격 증명(Credentials)
 
-쿠키·인증 정보를 같이 보내려면 서버 `credentials: true`와 더불어
-프론트 `fetch`에 `credentials: 'include'`를 함께 줘야 한다.
+쿠키나 인증 정보를 함께 보내려면 양쪽 모두 설정이 필요하다.
+
+- 서버: `Access-Control-Allow-Credentials: true`
+- 프론트: `fetch`에 `credentials: 'include'`
+
+이때 `Access-Control-Allow-Origin`은 `*`가 아닌 **구체적인 출처**여야 한다.
