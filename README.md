@@ -28,6 +28,9 @@ generate_prompt.txt  →  (별도 LLM 세션)  →  dialogue.txt
 ## 폴더 구조
 
 ```
+prompts/
+  v1.md                  # 학습 에이전트 프롬프트 (v1_output 채점에 사용)
+  v2.md                  # 개선 버전 (v2_output 채점에 사용)
 test_cases/
   case_NN/
     spec.json            # 생성 명세 + 채점용 정답지
@@ -40,6 +43,9 @@ test_cases/
       agent_output/
       score.json
 ```
+
+`prompts/vN.md`가 `dialogue.txt`를 입력받아 해당 케이스의
+`vN_output/agent_output/`을 생성하는 학습 에이전트 프롬프트다.
 
 케이스 번호는 두 자리 0 패딩(`case_01` …). `spec.json`/정답지의 한국어
 필드명(`생성_명세`, `정답지`, `예상_결과_문서` 등)은 채점 LLM이 한국어
