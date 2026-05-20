@@ -13,7 +13,7 @@
 
 `generate_prompt.txt`로 합성한 대화(`dialogue.txt`)를 문서화 에이전트에
 입력하고, 그 출력을 `spec.json`의 정답지와 대조해 채점한다. 에이전트
-프롬프트를 버전별(`v1`/`v2`)로 비교 평가하는 것이 목적이다.
+프롬프트를 버전별(`v1`/`v2`/`v3`)로 비교 평가하는 것이 목적이다.
 
 ## 파이프라인
 
@@ -22,7 +22,8 @@ generate_prompt.txt  →  (별도 LLM 세션)  →  dialogue.txt
                                                  ↓
                                          학습 에이전트
                                                  ↓
-                         v1_output / v2_output  ←→  spec.json(정답지)로 채점
+                    v1_output / v2_output / v3_output
+                                                 ←→  spec.json(정답지)로 채점
 ```
 
 ## 폴더 구조
@@ -31,6 +32,10 @@ generate_prompt.txt  →  (별도 LLM 세션)  →  dialogue.txt
 prompts/
   v1.md                  # 학습 에이전트 프롬프트 (v1_output 채점에 사용)
   v2.md                  # 개선 버전 (v2_output 채점에 사용)
+  v3.md                  # v2 피드백 반영 버전 (v3_output 채점에 사용)
+  v1_feedback.md         # v2 작성용 결함 피드백
+  v2_feedback.md         # v3 작성용 결함 피드백
+  v3_feedback.md         # v4 작성용 결함 피드백
 test_cases/
   case_NN/
     spec.json            # 생성 명세 + 채점용 정답지
@@ -40,6 +45,9 @@ test_cases/
       agent_output/      # 에이전트 출력 (채점 대상)
       score.json         # 채점 결과
     v2_output/
+      agent_output/
+      score.json
+    v3_output/
       agent_output/
       score.json
 ```
@@ -56,3 +64,13 @@ test_cases/
 새 케이스의 `spec.json` + `generate_prompt.txt`를 붙여넣으면 Claude Code가
 [`.claude/claude.md`](.claude/claude.md)의 규칙에 따라 폴더 구조와 입력
 파일을 일괄 생성한다.
+
+## 작업 도구 이력
+
+- 케이스 생성, v1 실행·채점, v2 프롬프트 작성, v2 결과 생성까지는
+  Claude Code를 사용했다.
+- v2 결과 채점부터는 Codex를 사용했다. 이후 `v2_feedback.md`, `v3.md`,
+  v3 결과 생성, v3 채점, `v3_feedback.md` 작성도 Codex로 진행했다.
+- 평가 오염을 줄이기 위해 결과 생성과 채점은 각 케이스별 고립 서브에이전트로
+  수행했다. 생성 단계에는 `prompts/vN.md`와 `dialogue.txt`만 제공하고,
+  채점 단계에는 `spec.json`과 해당 `agent_output/`만 제공했다.
