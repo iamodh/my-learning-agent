@@ -69,8 +69,16 @@ test_cases/
 
 - 케이스 생성, v1 실행·채점, v2 프롬프트 작성, v2 결과 생성까지는
   Claude Code를 사용했다.
-- v2 결과 채점부터는 Codex를 사용했다. 이후 `v2_feedback.md`, `v3.md`,
-  v3 결과 생성, v3 채점, `v3_feedback.md` 작성도 Codex로 진행했다.
+- v2 결과 채점부터 `v3_feedback.md`까지(v2 채점, `v2_feedback.md`,
+  `v3.md`, v3 결과 생성, v3 채점, `v3_feedback.md`)는 1차로 Codex로
+  진행했다.
+- 이후 평가자를 Claude로 통일하기 위해 v2 채점부터 `v3_feedback.md`까지
+  다시 Claude로 수행했다. v2는 10개 케이스 전부 재채점, v3는 v2 점수
+  하위 3개(case_02·05·09)만 재실행·재채점했다.
 - 평가 오염을 줄이기 위해 결과 생성과 채점은 각 케이스별 고립 서브에이전트로
   수행했다. 생성 단계에는 `prompts/vN.md`와 `dialogue.txt`만 제공하고,
   채점 단계에는 `spec.json`과 해당 `agent_output/`만 제공했다.
+- 권한 시스템상 서브에이전트의 직접 파일 쓰기가 거부되는 경우가 잦아,
+  서브에이전트는 펜스 블록으로 내용만 반환하고 메인이 받아 파일에
+  기록하는 패턴으로 운영했다(자세한 내용은 [`.claude/CLAUDE.md`](.claude/CLAUDE.md)
+  의 *서브에이전트 출력 회수* 절 참고).
