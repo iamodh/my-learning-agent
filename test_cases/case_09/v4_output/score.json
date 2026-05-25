@@ -1,0 +1,86 @@
+{
+  "case_id": 9,
+  "prompt_version": "v4",
+  "실행_모드": "격리(서브에이전트, 콜드 스타트, spec 차단)",
+  "채점_모드": "독립 채점 서브에이전트(콜드 스타트, 이전 score·가설·타 케이스 차단). 판정 전사",
+  "채점": {
+    "예상_결과_문서": {
+      "판정": "✓",
+      "근거": "로그인 기능(login-google-oauth.md)과 결제 기능(toss-payment-confirm.md) 두 결과 문서가 루트에 존재함"
+    },
+    "예상_지식_문서": {
+      "판정": "✓",
+      "근거": "knowledge/oauth.md, knowledge/session.md, knowledge/payment-gateway.md 세 지식 문서가 모두 존재함"
+    },
+    "예상_지식_문서_섹션": {
+      "판정": "✓",
+      "근거": "session.md에 '만료 정책 — sliding + absolute 병행' 섹션이 있어 세션 만료를 포함함. payment-gateway.md에 'PG사' 설명과 토스페이먼츠 confirm 등 PG사 연동 내용이 포함됨. oauth.md는 별도 하위 섹션 요구 없음(빈 배열)"
+    },
+    "예상_참조_매핑": {
+      "판정": "✓",
+      "근거": "login-google-oauth.md가 knowledge/oauth.md와 knowledge/session.md를 참조. toss-payment-confirm.md가 knowledge/payment-gateway.md와 knowledge/session.md를 참조. 두 결과 문서가 각각 정확히 spec과 동일한 매핑을 가짐"
+    },
+    "예상_참조_이유_존재": {
+      "판정": "✓",
+      "근거": "두 결과 문서 모두 '왜 그 지식을 썼는가 (참조 이유)' 섹션이 별도로 존재하며 OAuth/세션, PG사/세션 각각의 이유를 구체적으로 서술함"
+    },
+    "예상_폴더_깊이_최대": {
+      "판정": "✓",
+      "근거": "루트(깊이1)와 knowledge/(깊이2)만 존재. 최대 깊이 2 충족"
+    },
+    "예상_총_문서_수_범위": {
+      "판정": "✓",
+      "근거": "README 제외 총 5개 문서(login-google-oauth.md, toss-payment-confirm.md, knowledge/oauth.md, knowledge/session.md, knowledge/payment-gateway.md)로 [5,5] 범위에 정확히 일치"
+    },
+    "예시_요청_대상_개념": {
+      "판정": "✓",
+      "근거": "oauth.md에 Express 구현 js 코드 블록 1개, payment-gateway.md에 토스 confirm js 코드 블록 1개가 각각 포함됨"
+    },
+    "예상_잡담_턴_수": {
+      "판정": "✓",
+      "근거": "출력 문서에 잡담 관련 내용 없음. 모든 문서가 학습 주제에 집중되어 있음"
+    },
+    "반복_질문_주제": {
+      "판정": "✓",
+      "근거": "반복 질문 주제 빈 배열에 부합 — 특정 개념을 중복 문서화한 흔적 없음"
+    }
+  },
+  "특이_검증": [
+    {
+      "항목": "공통 지식 '세션 관리'가 단 하나의 문서로 존재하는가 (양쪽 결과 문서가 같은 문서를 참조)",
+      "판정": "✓",
+      "근거": "knowledge/session.md 단일 문서가 존재하며, login-google-oauth.md와 toss-payment-confirm.md가 모두 동일한 [`knowledge/session.md`] 경로를 참조함"
+    },
+    {
+      "항목": "'세션 관리' 문서가 두 번 만들어지지 않았는가 — 결과 문서별로 따로 만들면 L6 위반",
+      "판정": "✓",
+      "근거": "knowledge/ 하위에 session.md 단 하나만 존재. 결과별 중복 세션 문서 없음"
+    },
+    {
+      "항목": "두 결과 문서('로그인 기능', '결제 기능')가 각각 *고유 지식*과 *공통 지식*을 모두 참조하는가",
+      "판정": "✓",
+      "근거": "login-google-oauth.md → oauth.md(고유) + session.md(공통), toss-payment-confirm.md → payment-gateway.md(고유) + session.md(공통). 양쪽 모두 충족"
+    },
+    {
+      "항목": "각 참조의 이유가 명시되어 있는가 (L5 — 공통 지식의 경우 두 결과 문서에서 *왜 같은 지식이 필요한지*가 각각 서술)",
+      "판정": "✓",
+      "근거": "login-google-oauth.md의 '세션' 항목은 '콜백에서 식별된 사용자를 이후 요청까지 들고 다녀야 하므로 req.session.userId 심음'으로 서술. toss-payment-confirm.md의 '세션' 항목은 '결제는 멱등성·금액 정합성이 민감해 만료 자동 갱신 금지, 미들웨어 선검사·userId로 소유권 검증'으로 다른 맥락의 이유를 각각 서술함"
+    },
+    {
+      "항목": "세션 만료가 세션 관리 문서의 섹션으로, PG사 연동이 결제 게이트웨이 문서의 섹션으로 통합되었는가",
+      "판정": "✓",
+      "근거": "session.md 내 '만료 정책 — sliding + absolute 병행' 섹션으로 세션 만료가 통합됨. payment-gateway.md 내 'PG사(Payment Gateway)와 토스페이먼츠 confirm 패턴' 본문 및 '결제 흐름', '토스페이먼츠 — 결제창은 클라이언트, 최종 승인은 서버 패턴' 섹션으로 PG사 연동이 통합됨. 별도 문서로 분리되지 않음"
+    },
+    {
+      "항목": "사용자가 예시를 요청한 두 개념(OAuth, 결제 게이트웨이)의 지식 문서에 각각 구체적 코드가 1개 이상 포함되었는가",
+      "판정": "✓",
+      "근거": "oauth.md에 '/auth/google'과 '/auth/google/callback' Express 코드(```js 블록) 포함. payment-gateway.md에 '/payments/confirm' 토스 confirm 호출 js 코드 블록 포함"
+    }
+  ],
+  "총평": {
+    "통과요약": "10개 채점 항목과 6개 특이_검증 항목 모두 통과. 공통 지식(세션 관리)이 단일 문서로 유지되어 양쪽 결과가 동일 문서를 참조하며, 각 참조에 맥락이 다른 이유가 명시됨. 세션 만료/PG사 연동은 상위 지식 문서의 섹션으로 적절히 통합. 예시 요청 대상인 OAuth와 결제 게이트웨이 모두 구체 코드를 포함",
+    "핵심_실패": "없음",
+    "점수": 1.0,
+    "판정": "PASS"
+  }
+}
