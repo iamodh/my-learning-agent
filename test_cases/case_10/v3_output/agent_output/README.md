@@ -1,7 +1,23 @@
-# 문서 배치
+# Next.js 개인 블로그 학습 정리
 
-- `personal-blog.md`: Next.js 개인 블로그 제작 목표와 참조 지식
-- `knowledge/nextjs-app-routing-and-ssg.md`: App Router, 동적 라우팅, SSG 정리
-- `knowledge/mdx-content.md`: MDX 콘텐츠 작성과 설정 정리
-- `knowledge/vercel-deployment.md`: Vercel 배포와 환경 변수 정리
-- `knowledge/nextjs-seo.md`: Next.js SEO 처리 정리
+대화에서 학습한 내용을 지식 문서와 결과 문서로 분리해 정리한 결과물이다.
+
+## 디렉토리 구조
+
+```
+.
+├── README.md
+├── result/
+│   └── nextjs-blog.md
+└── knowledge/
+    ├── nextjs-app-router.md
+    ├── ssg-and-isr.md
+    ├── mdx.md
+    ├── vercel-deploy.md
+    └── nextjs-seo-metadata.md
+```
+
+## 문서 안내
+
+- `result/nextjs-blog.md` — 만들고자 한 개인 블로그의 구성과 사용된 지식 매핑.
+- `knowledge/` — 블로그 제작 과정에서 학습한 개별 개념 문서.
